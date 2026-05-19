@@ -1,70 +1,93 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.apigee.demo</groupId>
+    <groupId>apigee</groupId>
     <artifactId>proxy-demo-maven</artifactId>
     <version>1.0.0</version>
-    <name>proxy-demo-maven</name>
     <packaging>pom</packaging>
-
-    <pluginRepositories>
-        <pluginRepository>
-            <id>central</id>
-            <name>Central Repository</name>
-            <url>https://repo.maven.apache.org/maven2</url>
-            <layout>default</layout>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </pluginRepository>
-    </pluginRepositories>
+    <name>proxy-demo-maven</name>
+    <description>Apigee API proxy deployed via Maven plugin from GitHub Actions</description>
 
     <properties>
+        <apigee.plugin.version>2.5.2</apigee.plugin.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <org>YOUR_APIGEE_ORG</org> <!-- Can be overridden via CLI -->
     </properties>
+
+    <profiles>
+        <profile>
+            <id>eval</id>
+            <properties>
+                <apigee.org>${org}</apigee.org>
+                <apigee.env>${env}</apigee.env>
+                <apigee.hosturl>https://apigee.googleapis.com</apigee.hosturl>
+                <apigee.apiversion>apigee</apigee.apiversion>
+                <apigee.bearer>${bearer}</apigee.bearer>
+                <apigee.options>override</apigee.options>
+                <apigee.delay>5000</apigee.delay>
+            </properties>
+        </profile>
+    </profiles>
 
     <build>
         <plugins>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-apiproxy-to-target</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/apiproxy</outputDirectory>
+                            <overwrite>true</overwrite>
+                            <resources>
+                                <resource>
+                                    <directory>${basedir}/apiproxy</directory>
+                                    <filtering>false</filtering>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>io.apigee.build-tools.enterprise4g</groupId>
                 <artifactId>apigee-edge-maven-plugin</artifactId>
-                <version>2.3.5</version>
+                <version>${apigee.plugin.version}</version>
                 <executions>
                     <execution>
-                        <id>configure-bundle-step</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>configure</goal>
-                        </goals>
-                    </execution>
-                    <execution>
-                        <id>deploy-bundle-step</id>
+                        <id>deploy-proxy</id>
                         <phase>install</phase>
                         <goals>
+                            <goal>configure</goal>
                             <goal>deploy</goal>
                         </goals>
                     </execution>
                 </executions>
             </plugin>
+
         </plugins>
     </build>
 
-    <profiles>
-        <profile>
-         <id>eval</id>
-		<properties>
-			<apigee.profile>eval</apigee.profile>
-			<apigee.env>eval</apigee.env> <!-- The environment name in Eval orgs is usually 'eval' -->
-			<apigee.hosturl>https://apigee.googleapis.com</apigee.hosturl>
-			<apigee.apiversion>v1</apigee.apiversion>
-			<apigee.org>${org}</apigee.org> <!-- Passed via CLI -->
-			<apigee.options>override</apigee.options>
-			<apigee.token>${bearer}</apigee.token> <!-- Passed via CLI -->
-		</properties>
-	</profile>
-    </profiles>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>central</id>
+            <name>Maven Central</name>
+            <url>https://repo1.maven.org/maven2</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </pluginRepository>
+    </pluginRepositories>
+
 </project>
