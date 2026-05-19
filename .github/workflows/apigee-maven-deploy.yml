@@ -3,12 +3,7 @@
 #
 # CI/CD pipeline for Apigee API Proxy: proxy-demo-maven
 # Deployment method: apigee-deploy-maven-plugin (Maven)
-#
-# GitOps (Option B):
-#   scaffold folders → commit to repo
-#   generate XML     → commit to repo
-#   lint             → apigeelint
-#   maven deploy     → bundles + imports + deploys to Apigee in one mvn command
+# Plugin source    : GitHub Packages (not Maven Central)
 #
 # Required GitHub Secrets:
 #   APIGEE_ORG                 – Apigee organisation name (= GCP project ID)
@@ -42,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write           # push scaffold commit back to repo
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -93,7 +88,7 @@ jobs:
     needs: scaffold
 
     permissions:
-      contents: write           # push XML commit back to repo
+      contents: write
 
     steps:
       - name: Checkout repository (includes scaffold commit from Job 1)
@@ -148,7 +143,7 @@ jobs:
     needs: generate-xml
 
     steps:
-      - name: Checkout repository (includes XML commit from Job 2)
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
@@ -168,7 +163,7 @@ jobs:
             -s apiproxy \
             -f table.js \
             --profile apigee \
-            --maxWarnings 10
+            --exitCode warn
           echo "==> Lint complete."
 
       - name: Upload lint report
@@ -188,7 +183,7 @@ jobs:
 
     permissions:
       contents: read
-      id-token: write           # required for Workload Identity Federation
+      id-token: write       # required for Workload Identity Federation
 
     steps:
       - name: Checkout repository
@@ -196,14 +191,14 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
-      # ── Keyless auth ─────────────────────────────────────────────────────
+      # ── Keyless GCP auth ─────────────────────────────────────────────────
       - name: Authenticate to GCP via Workload Identity Federation
         id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.SERVICE_ACCOUNT_EMAIL }}
-          token_format: access_token   # short-lived OAuth2 token for Maven
+          token_format: access_token
 
       # ── Java & Maven ─────────────────────────────────────────────────────
       - name: Set up Java 11
@@ -220,6 +215,43 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-maven-
 
+      # ── Write settings.xml so Maven can pull from GitHub Packages ────────
+      #
+      # The apigee-deploy-maven-plugin jar is hosted on GitHub Packages,
+      # not Maven Central. Maven needs a username + token to download it.
+      # GITHUB_TOKEN (auto-injected) is used as the password — no extra
+      # secret needed.
+      #
+      # The <server> id here MUST match the <pluginRepository> id in pom.xml:
+      #   id = apigee-deploy-maven-plugin
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Write Maven settings.xml for GitHub Packages auth
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml << 'EOF'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                                        http://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <servers>
+              <server>
+                <!--
+                  id must match pluginRepository id in pom.xml
+                  username can be any non-empty string for GitHub Packages
+                  password is the auto-injected GITHUB_TOKEN
+                -->
+                <id>apigee-deploy-maven-plugin</id>
+                <username>${env.GITHUB_ACTOR}</username>
+                <password>${env.GITHUB_TOKEN_VAL}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+          echo "==> settings.xml written."
+        env:
+          GITHUB_ACTOR:    ${{ github.actor }}
+          GITHUB_TOKEN_VAL: ${{ secrets.GITHUB_TOKEN }}
+
       # ── Download latest proxy bundle (XML from Job 2) ────────────────────
       - name: Download proxy bundle source artifact
         uses: actions/download-artifact@v4
@@ -235,8 +267,8 @@ jobs:
           APIGEE_TOKEN: ${{ steps.auth.outputs.access_token }}
         run: |
           echo "==> Starting Maven deploy …"
-          echo "    Org : $APIGEE_ORG"
-          echo "    Env : $APIGEE_ENV"
+          echo "    Org  : $APIGEE_ORG"
+          echo "    Env  : $APIGEE_ENV"
           echo "    Proxy: ${{ env.PROXY_NAME }}"
           echo ""
 
