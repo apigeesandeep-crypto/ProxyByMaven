@@ -1,29 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  pom.xml
-  Root Maven POM for Apigee proxy: proxy-demo-maven
-
-  Plugin  : io.apigee.build-tools.enterprise4g:apigee-edge-maven-plugin:2.5.2
-  Source  : Maven Central (no GitHub Packages, no credentials needed)
-  Docs    : https://github.com/apigee/apigee-deploy-maven-plugin
-
-  Version guide:
-    2.x  → Apigee X / hybrid   (this file)
-    1.x  → Apigee Edge SaaS / OPDK
-
-  How this pom works:
-    - Org, env, and bearer token are passed as Maven profiles + -D flags
-    - Profile id matches the environment name (e.g. -Peval)
-    - Bearer token passed as: -Dbearer=<WIF access token>
-    - Plugin reads them from profile <properties> block
-
-  mvn command used by the workflow:
-    mvn install -Peval \
-      -Dorg=$APIGEE_ORG \
-      -Denv=$APIGEE_ENV \
-      -Dbearer=$APIGEE_TOKEN \
-      --no-transfer-progress --batch-mode
--->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
@@ -31,7 +6,6 @@
 
     <modelVersion>4.0.0</modelVersion>
 
-    <!-- ── Project coordinates ──────────────────────────────────────────── -->
     <groupId>apigee</groupId>
     <artifactId>proxy-demo-maven</artifactId>
     <version>1.0.0</version>
@@ -39,83 +13,38 @@
     <name>proxy-demo-maven</name>
     <description>Apigee API proxy deployed via Maven plugin from GitHub Actions</description>
 
-    <!-- ── Global properties ────────────────────────────────────────────── -->
     <properties>
         <apigee.plugin.version>2.5.2</apigee.plugin.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
-    <!-- ── Profiles ─────────────────────────────────────────────────────────
-         One profile per environment.
-         Profile id MUST match the value passed to -P on the mvn command.
-         org, env, options and apigee.bearer are the exact property names
-         the plugin reads — do NOT rename them.
-    ──────────────────────────────────────────────────────────────────────── -->
     <profiles>
-
-        <!-- eval environment profile -->
         <profile>
             <id>eval</id>
             <properties>
-                <!-- org and env are passed in via -Dorg and -Denv on CLI -->
                 <apigee.org>${org}</apigee.org>
                 <apigee.env>${env}</apigee.env>
-
-                <!--
-                  apigee.hosturl is the Apigee X management API endpoint.
-                  This is always https://apigee.googleapis.com for Apigee X.
-                -->
                 <apigee.hosturl>https://apigee.googleapis.com</apigee.hosturl>
-
-                <!--
-                  apigee.apiversion must be "apigee" for Apigee X / hybrid.
-                  (Edge SaaS uses "edge")
-                -->
                 <apigee.apiversion>apigee</apigee.apiversion>
-
-                <!--
-                  apigee.bearer is the short-lived WIF OAuth2 access token.
-                  Passed via -Dbearer=<token> on the mvn command line.
-                -->
                 <apigee.bearer>${bearer}</apigee.bearer>
-
-                <!--
-                  override = undeploy previous revision, deploy new one.
-                  Other options: validate, update, async
-                -->
                 <apigee.options>override</apigee.options>
-
-                <!--
-                  Root directory where apiproxy/ folder lives.
-                  "." means repo root (where pom.xml is placed).
-                -->
                 <apigee.proxy.basedir>.</apigee.proxy.basedir>
-
-                <!-- Wait 5000ms for deployment to reach READY state -->
                 <apigee.delay>5000</apigee.delay>
             </properties>
         </profile>
-
     </profiles>
 
-    <!-- ── Build ────────────────────────────────────────────────────────── -->
     <build>
         <plugins>
             <plugin>
                 <groupId>io.apigee.build-tools.enterprise4g</groupId>
                 <artifactId>apigee-edge-maven-plugin</artifactId>
                 <version>${apigee.plugin.version}</version>
-
                 <executions>
                     <execution>
                         <id>deploy-proxy</id>
                         <phase>install</phase>
                         <goals>
-                            <!--
-                              configure : packages the apiproxy/ into a zip
-                                          under target/
-                              deploy    : imports and deploys the zip to Apigee
-                            -->
                             <goal>configure</goal>
                             <goal>deploy</goal>
                         </goals>
@@ -125,9 +54,6 @@
         </plugins>
     </build>
 
-    <!-- ── Plugin repository ─────────────────────────────────────────────
-         Plugin is on Maven Central — no auth, no GitHub Packages needed.
-    ──────────────────────────────────────────────────────────────────── -->
     <pluginRepositories>
         <pluginRepository>
             <id>central</id>
