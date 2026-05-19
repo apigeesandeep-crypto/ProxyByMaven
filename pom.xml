@@ -2,9 +2,15 @@
 <!--
   pom.xml
   Root Maven POM for Apigee proxy: proxy-demo-maven
-  Plugin : apigee-deploy-maven-plugin v2.4.2
-  Source : https://github.com/apigee/apigee-deploy-maven-plugin (GitHub Packages)
-  Auth   : Google OAuth2 access token via WIF (keyless — no JSON key)
+
+  Plugin  : apigee-edge-maven-plugin v2.5.2
+  GroupId : io.apigee.build-tools.enterprise4g        (correct — on Maven Central)
+  Source  : https://github.com/apigee/apigee-deploy-maven-plugin
+  Repo    : Maven Central (no GitHub Packages, no credentials needed)
+
+  Version guide:
+    2.x  →  Apigee X / hybrid  (this file)
+    1.x  →  Apigee Edge SaaS / Private Cloud OPDK
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -14,28 +20,28 @@
     <modelVersion>4.0.0</modelVersion>
 
     <!-- ── Project coordinates ──────────────────────────────────────────── -->
-    <groupId>com.example.apigee</groupId>
+    <groupId>apigee</groupId>
     <artifactId>proxy-demo-maven</artifactId>
     <version>1.0.0</version>
     <packaging>pom</packaging>
-
     <name>proxy-demo-maven</name>
     <description>Apigee API proxy deployed via Maven plugin from GitHub Actions</description>
 
     <!-- ── Properties ───────────────────────────────────────────────────── -->
     <properties>
+        <!-- Passed in via -D flags from the workflow mvn command -->
         <apigee.org>${env.APIGEE_ORG}</apigee.org>
         <apigee.env>${env.APIGEE_ENV}</apigee.env>
-        <apigee.googletoken>${env.APIGEE_TOKEN}</apigee.googletoken>
-        <apigee.proxy.basedir>.</apigee.proxy.basedir>
-        <apigee.apitype>apiproxy</apigee.apitype>
 
         <!--
-          Plugin is fetched from GitHub Packages.
-          The GITHUB_TOKEN injected by Actions is used as the password
-          in settings.xml (written by the workflow step below).
+          bearer token from WIF (google-github-actions/auth access_token output).
+          Passed in via -Dbearer=... on the mvn command line.
         -->
-        <apigee.maven.plugin.version>2.4.2</apigee.maven.plugin.version>
+        <apigee.bearer>${bearer}</apigee.bearer>
+
+        <!-- Plugin version — 2.x for Apigee X / hybrid -->
+        <apigee.plugin.version>2.5.2</apigee.plugin.version>
+
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -43,37 +49,46 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>com.apigee.edge.partners</groupId>
-                <artifactId>apigee-deploy-maven-plugin</artifactId>
-                <version>${apigee.maven.plugin.version}</version>
+                <!--
+                  CORRECT coordinates for Apigee X/hybrid Maven plugin
+                  on Maven Central — no extra repository config needed.
+
+                  groupId    : io.apigee.build-tools.enterprise4g
+                  artifactId : apigee-edge-maven-plugin
+                  version    : 2.5.2  (latest 2.x on Maven Central)
+                -->
+                <groupId>io.apigee.build-tools.enterprise4g</groupId>
+                <artifactId>apigee-edge-maven-plugin</artifactId>
+                <version>${apigee.plugin.version}</version>
 
                 <executions>
                     <execution>
                         <id>deploy-proxy</id>
                         <phase>install</phase>
                         <goals>
+                            <goal>configure</goal>
                             <goal>deploy</goal>
                         </goals>
 
                         <configuration>
+                            <!-- Apigee X org and environment -->
                             <apigeeOrg>${apigee.org}</apigeeOrg>
                             <apigeeEnv>${apigee.env}</apigeeEnv>
 
                             <!--
-                              googleidtoken  → uses the short-lived WIF access token.
-                              No JSON key stored anywhere.
+                              bearer token auth — uses the short-lived WIF
+                              access token. No JSON key stored anywhere.
+                              Equivalent to: gcloud auth print-access-token
                             -->
-                            <authType>googleidtoken</authType>
-                            <googleTokenEmail>${apigee.googletoken}</googleTokenEmail>
+                            <apigeeAPIVersion>apigee</apigeeAPIVersion>
+                            <bearer>${apigee.bearer}</bearer>
 
-                            <apigeeBasePath>${apigee.proxy.basedir}</apigeeBasePath>
-                            <apitype>${apigee.apitype}</apitype>
+                            <!-- Override (undeploy) existing revision -->
+                            <apigeeOptions>override</apigeeOptions>
 
-                            <!-- Undeploy the previous revision before deploying -->
-                            <override>true</override>
+                            <!-- Wait for deployment to reach READY state -->
+                            <apigeeDelay>5000</apigeeDelay>
 
-                            <!-- Wait 5 s for Apigee to reach READY state -->
-                            <delay>5000</delay>
                         </configuration>
                     </execution>
                 </executions>
@@ -81,30 +96,18 @@
         </plugins>
     </build>
 
-    <!-- ── Plugin repository ─────────────────────────────────────────────
-         The plugin jar lives on GitHub Packages, not Maven Central.
-         Maven reads credentials for this repo from ~/.m2/settings.xml
-         which the workflow writes before running mvn install.
+    <!-- ── Plugin repositories ───────────────────────────────────────────
+         Only Maven Central needed — plugin is published there directly.
+         No GitHub Packages, no credentials, no settings.xml required.
     ──────────────────────────────────────────────────────────────────── -->
     <pluginRepositories>
-
         <pluginRepository>
             <id>central</id>
+            <name>Maven Central</name>
             <url>https://repo1.maven.org/maven2</url>
             <releases><enabled>true</enabled></releases>
             <snapshots><enabled>false</enabled></snapshots>
         </pluginRepository>
-
-        <!--
-          id must match the <server> id in settings.xml written by the workflow.
-        -->
-        <pluginRepository>
-            <id>apigee-deploy-maven-plugin</id>
-            <url>https://maven.pkg.github.com/apigee/apigee-deploy-maven-plugin</url>
-            <releases><enabled>true</enabled></releases>
-            <snapshots><enabled>false</enabled></snapshots>
-        </pluginRepository>
-
     </pluginRepositories>
 
 </project>
