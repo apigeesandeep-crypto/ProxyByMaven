@@ -3,7 +3,7 @@
 #
 # CI/CD pipeline for Apigee API Proxy: proxy-demo-maven
 # Plugin : io.apigee.build-tools.enterprise4g:apigee-edge-maven-plugin:2.5.2
-# Source : Maven Central (no GitHub Packages, no credentials needed)
+# Source : Maven Central
 #
 # Required GitHub Secrets:
 #   APIGEE_ORG                 – Apigee organisation name (= GCP project ID)
@@ -176,7 +176,7 @@ jobs:
 
     permissions:
       contents: read
-      id-token: write           # required for Workload Identity Federation
+      id-token: write         # required for Workload Identity Federation
 
     steps:
       - name: Checkout repository
@@ -191,7 +191,7 @@ jobs:
         with:
           workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.SERVICE_ACCOUNT_EMAIL }}
-          token_format: access_token   # short-lived OAuth2 token passed to Maven
+          token_format: access_token
 
       # ── Java 11 ──────────────────────────────────────────────────────────
       - name: Set up Java 11
@@ -217,9 +217,11 @@ jobs:
           path: apiproxy/
 
       # ── Maven deploy ──────────────────────────────────────────────────────
-      # Plugin : io.apigee.build-tools.enterprise4g:apigee-edge-maven-plugin
-      # Fetched from Maven Central — no settings.xml or GitHub Packages needed
-      # Auth   : -Dbearer=<WIF short-lived token>  (no JSON key stored)
+      # -P${APIGEE_ENV}  → activates the matching profile in pom.xml
+      # -Dorg            → apigee.org property read inside the profile
+      # -Denv            → apigee.env property read inside the profile
+      # -Dbearer         → apigee.bearer property — WIF short-lived token
+      # No settings.xml needed — plugin is on Maven Central
       # ─────────────────────────────────────────────────────────────────────
       - name: Run Maven deploy via apigee-edge-maven-plugin
         env:
@@ -228,15 +230,16 @@ jobs:
           APIGEE_TOKEN: ${{ steps.auth.outputs.access_token }}
         run: |
           echo "==> Starting Maven deploy …"
-          echo "    Org  : $APIGEE_ORG"
-          echo "    Env  : $APIGEE_ENV"
-          echo "    Proxy: ${{ env.PROXY_NAME }}"
+          echo "    Org    : $APIGEE_ORG"
+          echo "    Env    : $APIGEE_ENV"
+          echo "    Profile: $APIGEE_ENV"
+          echo "    Proxy  : ${{ env.PROXY_NAME }}"
           echo ""
 
           mvn install \
-            -f pom.xml \
-            -Dapigee.org="${APIGEE_ORG}" \
-            -Dapigee.env="${APIGEE_ENV}" \
+            -P"${APIGEE_ENV}" \
+            -Dorg="${APIGEE_ORG}" \
+            -Denv="${APIGEE_ENV}" \
             -Dbearer="${APIGEE_TOKEN}" \
             --no-transfer-progress \
             --batch-mode
