@@ -1,0 +1,266 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# .github/workflows/apigee-maven-deploy.yml
+#
+# CI/CD pipeline for Apigee API Proxy: proxy-demo-maven
+# Deployment method: apigee-deploy-maven-plugin (Maven)
+#
+# GitOps (Option B):
+#   scaffold folders → commit to repo
+#   generate XML     → commit to repo
+#   lint             → apigeelint
+#   maven deploy     → bundles + imports + deploys to Apigee in one mvn command
+#
+# Required GitHub Secrets:
+#   APIGEE_ORG                 – Apigee organisation name (= GCP project ID)
+#   APIGEE_ENV                 – Target environment name  (e.g. eval)
+#   GCP_PROJECT_ID             – GCP project ID
+#   WORKLOAD_IDENTITY_PROVIDER – Full WIF provider resource string
+#   SERVICE_ACCOUNT_EMAIL      – SA email used for keyless auth
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Apigee Maven Deploy – proxy-demo-maven
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/**'
+      - 'apiproxy/**'
+      - 'pom.xml'
+      - '.github/workflows/apigee-maven-deploy.yml'
+
+env:
+  PROXY_NAME: proxy-demo-maven
+
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+
+# ── JOB 1 ── Scaffold ────────────────────────────────────────────────────────
+  scaffold:
+    name: 1 · Scaffold Proxy Folder Structure
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write           # push scaffold commit back to repo
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run create_structure.py → create folders in repo
+        run: |
+          echo "==> Running create_structure.py …"
+          python scripts/create_structure.py .
+
+      - name: Verify scaffolded folder tree
+        run: |
+          echo "==> Folder tree:"
+          find apiproxy -type d | sort
+
+      - name: Commit scaffold folders to GitHub repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apiproxy/
+          if git diff --cached --quiet; then
+            echo "==> Scaffold already exists — nothing to commit."
+          else
+            git commit -m "ci: scaffold proxy-demo-maven folder structure [skip ci]"
+            git push
+            echo "==> Scaffold committed and pushed."
+          fi
+
+      - name: Upload scaffolded tree as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scaffolded-tree
+          path: apiproxy/
+          retention-days: 1
+
+
+# ── JOB 2 ── Generate XML ────────────────────────────────────────────────────
+  generate-xml:
+    name: 2 · Generate XML File Contents
+    runs-on: ubuntu-latest
+    needs: scaffold
+
+    permissions:
+      contents: write           # push XML commit back to repo
+
+    steps:
+      - name: Checkout repository (includes scaffold commit from Job 1)
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.ref }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run generate_xml.py → write XML files into repo
+        run: |
+          echo "==> Running generate_xml.py …"
+          python scripts/generate_xml.py .
+
+      - name: Display generated XML files
+        run: |
+          echo "==> Generated files:"
+          find apiproxy -name "*.xml" | sort
+          echo ""
+          echo "==> Root descriptor:"
+          cat apiproxy/${{ env.PROXY_NAME }}.xml
+
+      - name: Commit generated XML to GitHub repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apiproxy/
+          if git diff --cached --quiet; then
+            echo "==> XML unchanged — nothing to commit."
+          else
+            git commit -m "ci: generate XML for proxy-demo-maven [skip ci]"
+            git push
+            echo "==> XML committed and pushed."
+          fi
+
+      - name: Upload proxy bundle source as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxy-bundle-src
+          path: apiproxy/
+          retention-days: 1
+
+
+# ── JOB 3 ── Lint ────────────────────────────────────────────────────────────
+  lint:
+    name: 3 · Apigee Lint Checks
+    runs-on: ubuntu-latest
+    needs: generate-xml
+
+    steps:
+      - name: Checkout repository (includes XML commit from Job 2)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install apigeelint
+        run: npm install -g apigeelint
+
+      - name: Run apigeelint on apiproxy/
+        run: |
+          echo "==> Running apigeelint …"
+          apigeelint \
+            -s apiproxy \
+            -f table.js \
+            --profile apigee \
+            --exitCode warn
+          echo "==> Lint complete."
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: apiproxy/
+          retention-days: 7
+
+
+# ── JOB 4 ── Maven Deploy ────────────────────────────────────────────────────
+  maven-deploy:
+    name: 4 · Maven Build & Deploy to Apigee Eval
+    runs-on: ubuntu-latest
+    needs: lint
+
+    permissions:
+      contents: read
+      id-token: write           # required for Workload Identity Federation
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      # ── Keyless auth ─────────────────────────────────────────────────────
+      - name: Authenticate to GCP via Workload Identity Federation
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT_EMAIL }}
+          token_format: access_token   # short-lived OAuth2 token for Maven
+
+      # ── Java & Maven ─────────────────────────────────────────────────────
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      # ── Download latest proxy bundle (XML from Job 2) ────────────────────
+      - name: Download proxy bundle source artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: proxy-bundle-src
+          path: apiproxy/
+
+      # ── Maven deploy ─────────────────────────────────────────────────────
+      - name: Run Maven deploy via apigee-deploy-maven-plugin
+        env:
+          APIGEE_ORG:   ${{ secrets.APIGEE_ORG }}
+          APIGEE_ENV:   ${{ secrets.APIGEE_ENV }}
+          APIGEE_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          echo "==> Starting Maven deploy …"
+          echo "    Org : $APIGEE_ORG"
+          echo "    Env : $APIGEE_ENV"
+          echo "    Proxy: ${{ env.PROXY_NAME }}"
+          echo ""
+
+          mvn install \
+            -f pom.xml \
+            -Dapigee.org="${APIGEE_ORG}" \
+            -Dapigee.env="${APIGEE_ENV}" \
+            -Dapigee.googletoken="${APIGEE_TOKEN}" \
+            -Dapigee.proxy.basedir="." \
+            --no-transfer-progress \
+            --batch-mode
+
+          echo "==> Maven deploy complete."
+
+      # ── Summary ──────────────────────────────────────────────────────────
+      - name: Deployment summary
+        run: |
+          echo "──────────────────────────────────────────"
+          echo "  Proxy Name   : ${{ env.PROXY_NAME }}"
+          echo "  Org          : ${{ secrets.APIGEE_ORG }}"
+          echo "  Environment  : ${{ secrets.APIGEE_ENV }}"
+          echo "  Deploy method: Maven (apigee-deploy-maven-plugin)"
+          echo "  Auth method  : Workload Identity Federation (keyless)"
+          echo "  Triggered by : ${{ github.actor }}"
+          echo "  Commit SHA   : ${{ github.sha }}"
+          echo "  Branch       : ${{ github.ref_name }}"
+          echo "──────────────────────────────────────────"
