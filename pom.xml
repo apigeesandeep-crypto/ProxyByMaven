@@ -2,12 +2,9 @@
 <!--
   pom.xml
   Root Maven POM for Apigee proxy: proxy-demo-maven
-  Uses: apigee-deploy-maven-plugin (Apigee X / hybrid)
-
-  Authentication  : Google OAuth2 access token (injected by GitHub Actions WIF)
-  Target org      : ${apigee.org}    (set via -Dapigee.org=... or CI secret)
-  Target env      : ${apigee.env}    (set via -Dapigee.env=... or CI secret)
-  Proxy bundle dir: apiproxy/        (standard flat layout, no src/gateway wrapper)
+  Plugin : apigee-deploy-maven-plugin v2.4.2
+  Source : https://github.com/apigee/apigee-deploy-maven-plugin (GitHub Packages)
+  Auth   : Google OAuth2 access token via WIF (keyless — no JSON key)
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -27,29 +24,24 @@
 
     <!-- ── Properties ───────────────────────────────────────────────────── -->
     <properties>
-        <!-- Overridden at runtime via -D flags or CI environment variables  -->
         <apigee.org>${env.APIGEE_ORG}</apigee.org>
         <apigee.env>${env.APIGEE_ENV}</apigee.env>
-
-        <!-- Token injected by google-github-actions/auth (WIF keyless flow) -->
         <apigee.googletoken>${env.APIGEE_TOKEN}</apigee.googletoken>
-
-        <!-- Proxy bundle root — flat layout used by this repo              -->
-        <apigee.apitype>apiproxy</apigee.apitype>
         <apigee.proxy.basedir>.</apigee.proxy.basedir>
+        <apigee.apitype>apiproxy</apigee.apitype>
 
-        <!-- Plugin version -->
+        <!--
+          Plugin is fetched from GitHub Packages.
+          The GITHUB_TOKEN injected by Actions is used as the password
+          in settings.xml (written by the workflow step below).
+        -->
         <apigee.maven.plugin.version>2.4.2</apigee.maven.plugin.version>
-
-        <!-- Encoding -->
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
     <!-- ── Build ────────────────────────────────────────────────────────── -->
     <build>
         <plugins>
-
-            <!-- ── Apigee Deploy Maven Plugin ──────────────────────────── -->
             <plugin>
                 <groupId>com.apigee.edge.partners</groupId>
                 <artifactId>apigee-deploy-maven-plugin</artifactId>
@@ -58,62 +50,61 @@
                 <executions>
                     <execution>
                         <id>deploy-proxy</id>
-
-                        <!--
-                          "deploy" phase bundles + imports + deploys in one shot.
-                          Equivalent to running:
-                            mvn apigee-enterprise:deploy
-                        -->
                         <phase>install</phase>
-
                         <goals>
                             <goal>deploy</goal>
                         </goals>
 
                         <configuration>
-
-                            <!-- Apigee X / hybrid org and environment -->
                             <apigeeOrg>${apigee.org}</apigeeOrg>
                             <apigeeEnv>${apigee.env}</apigeeEnv>
 
                             <!--
-                              authType = "googleidtoken" uses the short-lived
-                              Google OAuth2 access token from WIF — no JSON key.
+                              googleidtoken  → uses the short-lived WIF access token.
+                              No JSON key stored anywhere.
                             -->
                             <authType>googleidtoken</authType>
                             <googleTokenEmail>${apigee.googletoken}</googleTokenEmail>
 
-                            <!-- Where the apiproxy/ folder lives            -->
                             <apigeeBasePath>${apigee.proxy.basedir}</apigeeBasePath>
+                            <apitype>${apigee.apitype}</apitype>
 
-                            <!-- Override existing deployment revision        -->
+                            <!-- Undeploy the previous revision before deploying -->
                             <override>true</override>
 
-                            <!-- Wait until deployment state = READY          -->
+                            <!-- Wait 5 s for Apigee to reach READY state -->
                             <delay>5000</delay>
-
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
-
         </plugins>
     </build>
 
-    <!-- ── Plugin repository (Apigee Maven plugin is hosted on GitHub PKG) -->
+    <!-- ── Plugin repository ─────────────────────────────────────────────
+         The plugin jar lives on GitHub Packages, not Maven Central.
+         Maven reads credentials for this repo from ~/.m2/settings.xml
+         which the workflow writes before running mvn install.
+    ──────────────────────────────────────────────────────────────────── -->
     <pluginRepositories>
+
         <pluginRepository>
             <id>central</id>
             <url>https://repo1.maven.org/maven2</url>
             <releases><enabled>true</enabled></releases>
             <snapshots><enabled>false</enabled></snapshots>
         </pluginRepository>
+
+        <!--
+          id must match the <server> id in settings.xml written by the workflow.
+        -->
         <pluginRepository>
-            <id>apigee-deploy-plugin</id>
-            <url>https://github.com/apigee/apigee-deploy-maven-plugin/releases</url>
+            <id>apigee-deploy-maven-plugin</id>
+            <url>https://maven.pkg.github.com/apigee/apigee-deploy-maven-plugin</url>
             <releases><enabled>true</enabled></releases>
             <snapshots><enabled>false</enabled></snapshots>
         </pluginRepository>
+
     </pluginRepositories>
 
 </project>
