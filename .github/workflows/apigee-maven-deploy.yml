@@ -184,6 +184,7 @@ jobs:
     permissions:
       contents: read
       id-token: write       # required for Workload Identity Federation
+      packages: read        # required to download plugin from GitHub Packages
 
     steps:
       - name: Checkout repository
@@ -207,6 +208,44 @@ jobs:
           distribution: temurin
           java-version: '11'
 
+      # ── Write settings.xml ───────────────────────────────────────────────
+      # Root cause of 401: ${env.VAR} inside XML is a Maven property reference,
+      # NOT a shell variable — it resolves to an empty string.
+      # Fix: use Python to write the actual token values directly into the file.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Write Maven settings.xml with GitHub Packages credentials
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ~/.m2
+          python3 - << 'PYEOF'
+          import os
+
+          actor = os.environ["GH_ACTOR"]
+          token = os.environ["GH_TOKEN"]
+
+          settings = f"""<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                                http://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <servers>
+              <server>
+                <id>apigee-deploy-maven-plugin</id>
+                <username>{actor}</username>
+                <password>{token}</password>
+              </server>
+            </servers>
+          </settings>"""
+
+          path = os.path.expanduser("~/.m2/settings.xml")
+          with open(path, "w") as f:
+              f.write(settings)
+
+          print(f"[OK] settings.xml written for user: {actor}")
+          print("[OK] Token length:", len(token), "(not shown for security)")
+          PYEOF
+
       - name: Cache Maven dependencies
         uses: actions/cache@v4
         with:
@@ -214,43 +253,6 @@ jobs:
           key: ${{ runner.os }}-maven-${{ hashFiles('pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
-
-      # ── Write settings.xml so Maven can pull from GitHub Packages ────────
-      #
-      # The apigee-deploy-maven-plugin jar is hosted on GitHub Packages,
-      # not Maven Central. Maven needs a username + token to download it.
-      # GITHUB_TOKEN (auto-injected) is used as the password — no extra
-      # secret needed.
-      #
-      # The <server> id here MUST match the <pluginRepository> id in pom.xml:
-      #   id = apigee-deploy-maven-plugin
-      # ─────────────────────────────────────────────────────────────────────
-      - name: Write Maven settings.xml for GitHub Packages auth
-        run: |
-          mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml << 'EOF'
-          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
-                                        http://maven.apache.org/xsd/settings-1.0.0.xsd">
-            <servers>
-              <server>
-                <!--
-                  id must match pluginRepository id in pom.xml
-                  username can be any non-empty string for GitHub Packages
-                  password is the auto-injected GITHUB_TOKEN
-                -->
-                <id>apigee-deploy-maven-plugin</id>
-                <username>${env.GITHUB_ACTOR}</username>
-                <password>${env.GITHUB_TOKEN_VAL}</password>
-              </server>
-            </servers>
-          </settings>
-          EOF
-          echo "==> settings.xml written."
-        env:
-          GITHUB_ACTOR:    ${{ github.actor }}
-          GITHUB_TOKEN_VAL: ${{ secrets.GITHUB_TOKEN }}
 
       # ── Download latest proxy bundle (XML from Job 2) ────────────────────
       - name: Download proxy bundle source artifact
