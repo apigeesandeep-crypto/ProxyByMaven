@@ -25,11 +25,17 @@
                 <apigee.org>${org}</apigee.org>
                 <apigee.env>${env}</apigee.env>
 
-                <!-- Apigee X management API base URL — must be /v1 -->
+                <!-- Apigee X management API base URL -->
                 <apigee.hosturl>https://apigee.googleapis.com</apigee.hosturl>
 
-                <!-- apiversion=apigee tells the plugin to use /v1/ prefix -->
-                <apigee.apiversion>apigee</apigee.apiversion>
+                <!--
+                    apigee.apiversion must be "v1" not "apigee".
+                    The plugin appends this directly into the URL path:
+                    https://apigee.googleapis.com/v1/organizations/...
+                    Setting it to "apigee" produces the wrong path:
+                    https://apigee.googleapis.com/apigee/organizations/... (404)
+                -->
+                <apigee.apiversion>v1</apigee.apiversion>
 
                 <!-- Short-lived WIF bearer token passed via -Dbearer on CLI -->
                 <apigee.bearer>${bearer}</apigee.bearer>
