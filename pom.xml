@@ -24,10 +24,18 @@
             <properties>
                 <apigee.org>${org}</apigee.org>
                 <apigee.env>${env}</apigee.env>
+
+                <!-- Apigee X management API base URL — must be /v1 -->
                 <apigee.hosturl>https://apigee.googleapis.com</apigee.hosturl>
+
+                <!-- apiversion=apigee tells the plugin to use /v1/ prefix -->
                 <apigee.apiversion>apigee</apigee.apiversion>
+
+                <!-- Short-lived WIF bearer token passed via -Dbearer on CLI -->
                 <apigee.bearer>${bearer}</apigee.bearer>
+
                 <apigee.options>override</apigee.options>
+                <apigee.proxy.basedir>.</apigee.proxy.basedir>
                 <apigee.delay>5000</apigee.delay>
             </properties>
         </profile>
